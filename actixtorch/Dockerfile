@@ -27,4 +27,12 @@ USER actix
 
 EXPOSE 8080
 ENTRYPOINT ["actix-torch-server", "--model-path=/app/saved_model/model.pt"]
-# podman run -it -d -p 8080:8080 0c7a0672c33c
+# podman run -it -d -p 8888:8080 0c7a0672c33c
+# [root@rhel91 client]# python client.py
+Reading image from /root/rust-mlops-template/actixtorch/actix-pytorch-example/client/test_image_3.png
+POST to http://localhost:8888/mnist
+Response (200)
+Content: {
+    "label": 3,
+    "confidence": 0.9558042722066217
+}
