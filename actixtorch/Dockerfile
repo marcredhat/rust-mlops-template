@@ -27,3 +27,4 @@ USER actix
 
 EXPOSE 8080
 ENTRYPOINT ["actix-torch-server", "--model-path=/app/saved_model/model.pt"]
+# podman run -it -d -p 8080:8080 0c7a0672c33c
