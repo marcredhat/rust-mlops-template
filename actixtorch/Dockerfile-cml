@@ -1,0 +1,146 @@
+FROM docker.io/rust:bookworm AS build
+
+
+WORKDIR /app
+
+ENV ML_RUNTIME_EDITOR="PBJ Workbench" \
+    ML_RUNTIME_EDITION="Standard" \
+    JUPYTERLAB_WORKSPACES_DIR=/tmp
+
+ENV ML_RUNTIME_JUPYTER_KERNEL_NAME="Rust" \
+    ML_RUNTIME_DESCRIPTION="PBJ Workbench Rust runtime provided by Marc"
+
+ENV ML_RUNTIME_EDITION="Nvidia GPU" \
+    ML_RUNTIME_DESCRIPTION="Rust  runtime with CUDA libraries provided by Marc" \
+    ML_RUNTIME_CUDA_VERSION="11.8.0"
+
+
+ENV \
+    ML_RUNTIME_METADATA_VERSION=2 \
+    ML_RUNTIME_FULL_VERSION=2023.08.2-b8 \
+    ML_RUNTIME_SHORT_VERSION=2023.08 \
+    ML_RUNTIME_MAINTENANCE_VERSION=2 \
+    ML_RUNTIME_GIT_HASH=cdee6e30026323b76feda974d3b6fba48bee5688 \
+    ML_RUNTIME_GBN=45253874
+
+LABEL \
+    com.cloudera.ml.runtime.runtime-metadata-version=$ML_RUNTIME_METADATA_VERSION \
+    com.cloudera.ml.runtime.editor=$ML_RUNTIME_EDITOR \
+    com.cloudera.ml.runtime.edition=$ML_RUNTIME_EDITION \
+    com.cloudera.ml.runtime.description=$ML_RUNTIME_DESCRIPTION \
+    com.cloudera.ml.runtime.kernel=$ML_RUNTIME_KERNEL \
+    com.cloudera.ml.runtime.full-version=$ML_RUNTIME_FULL_VERSION \
+    com.cloudera.ml.runtime.short-version=$ML_RUNTIME_SHORT_VERSION \
+    com.cloudera.ml.runtime.maintenance-version=$ML_RUNTIME_MAINTENANCE_VERSION \
+    com.cloudera.ml.runtime.git-hash=$ML_RUNTIME_GIT_HASH \
+    com.cloudera.ml.runtime.gbn=$ML_RUNTIME_GBN \
+    com.cloudera.ml.runtime.cuda-version=$ML_RUNTIME_CUDA_VERSION
+
+
+RUN apt-get update \
+    && apt-get install -y \
+    curl \
+    pkg-config \
+    libssl-dev
+COPY server/Cargo.toml server/Cargo.lock ./
+COPY server/src/ src/
+RUN cargo clean && cargo build --release
+RUN find . -type d | grep "libtorch/lib$" | xargs -I{} mv {} libtorch
+
+FROM ubuntu:22.04
+#FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu20.04
+USER root
+
+
+
+# The UID and username must match user.uid and user.username in
+# config/internal-config.yml To avoid conflicts, this defaults to 8536 after 0.8
+# release.
+RUN \
+ addgroup --gid 8536 cdsw && \
+ adduser --disabled-password --gecos "CDSW User" --uid 8536 --gid 8536 cdsw
+
+
+# MLX-50 Allow the engine image to be run as user cdsw upon startup.
+# To do this we must 'chmod 777' /etc related directories.
+RUN for i in /etc /etc/alternatives /opt/conda ; do \
+ if [ -d ${i} ]; then chmod 777 ${i}; fi; \
+ done
+
+# DSE-11162 Base engine changes to support runtime addons.
+# To do this, we must 'chown cdsw' some directories.
+# Make root directory read/writable by cdsw user
+RUN chown cdsw /
+
+# Add permissions to cdsw user recursively to the common directories that gets touched as part
+# of the engine startup process.
+RUN for i in /bin /etc /opt /sbin /usr; do \
+ if [ -d ${i} ]; then \
+   chown cdsw ${i}; \
+   find ${i} -type d -exec chown cdsw {} +; \
+ fi; \
+ done
+
+#RUN chown -R 8536:8536 /
+
+#RUN apt-get update -y  &&  apt-get upgrade -y  \
+#    &&  apt install curl build-essential checkinstall zlib1g-dev -y \
+#    && curl -L  https://www.openssl.org/source/openssl-1.1.1k.tar.gz -o openssl-1.1.1k.tar.gz &&  tar -xf openssl-1.1.1k.tar.gz
+
+
+#WORKDIR ./openssl-1.1.1k
+
+#RUN ./config --prefix=/usr/local/ssl --openssldir=/usr/local/ssl shared zlib \
+#    && make \
+#    && make install
+
+RUN apt-get update && apt install -y openssl libgomp1 && apt install -y g++-11
+RUN apt remove ssh --purge -y && apt install ssh -y && apt install openssh-client -y && apt install openssh-server -y
+RUN apt-get install python3-pip python3-venv npm avahi-daemon -y && pip install jupyterhub jupyterlab notebook sudospawner && adduser --disabled-password --shell /bin/false jupyter && usermod -a -G shadow jupyter
+
+WORKDIR /app
+COPY --from=build /app/target/release/actix-torch-server /usr/local/bin/actix-torch-server
+copy --from=build /app/libtorch/* /usr/lib/
+COPY saved_model/ /app/saved_model/
+
+RUN useradd -mU -s /bin/bash actix
+USER cdsw
+
+EXPOSE 8080
+ENTRYPOINT ["actix-torch-server", "--model-path=/app/saved_model/model.pt"]
+
+
+
+ENV ML_RUNTIME_EDITOR="5 PBJ Workbench" \
+    ML_RUNTIME_EDITION="5 Marc Rust" \
+    JUPYTERLAB_WORKSPACES_DIR=/tmp
+
+ENV ML_RUNTIME_JUPYTER_KERNEL_NAME="5 Marc Rust" \
+    ML_RUNTIME_DESCRIPTION="5 Marc PBJ Workbench Rust runtime"
+
+ENV ML_RUNTIME_EDITION="5 Marc Nvidia GPU Rust" \
+    ML_RUNTIME_DESCRIPTION="5 Marc Rust runtime with CUDA libraries" \
+    ML_RUNTIME_CUDA_VERSION="11.8.0"
+
+
+ENV \
+    ML_RUNTIME_KERNEL="5 Marc Rust kernel" \
+    ML_RUNTIME_METADATA_VERSION=2 \
+    ML_RUNTIME_FULL_VERSION=2023.10.2-b8 \
+    ML_RUNTIME_SHORT_VERSION=2023.10 \
+    ML_RUNTIME_MAINTENANCE_VERSION=2 \
+    ML_RUNTIME_GIT_HASH=cdee6e30026323b76feda974d3b6fba48bee5688 \
+    ML_RUNTIME_GBN=45253874
+
+LABEL \
+    com.cloudera.ml.runtime.runtime-metadata-version=$ML_RUNTIME_METADATA_VERSION \
+    com.cloudera.ml.runtime.editor=$ML_RUNTIME_EDITOR \
+    com.cloudera.ml.runtime.edition=$ML_RUNTIME_EDITION \
+    com.cloudera.ml.runtime.description=$ML_RUNTIME_DESCRIPTION \
+    com.cloudera.ml.runtime.kernel=$ML_RUNTIME_KERNEL \
+    com.cloudera.ml.runtime.full-version=$ML_RUNTIME_FULL_VERSION \
+    com.cloudera.ml.runtime.short-version=$ML_RUNTIME_SHORT_VERSION \
+    com.cloudera.ml.runtime.maintenance-version=$ML_RUNTIME_MAINTENANCE_VERSION \
+    com.cloudera.ml.runtime.git-hash=$ML_RUNTIME_GIT_HASH \
+    com.cloudera.ml.runtime.gbn=$ML_RUNTIME_GBN \
+    com.cloudera.ml.runtime.cuda-version=$ML_RUNTIME_CUDA_VERSION
